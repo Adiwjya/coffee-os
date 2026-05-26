@@ -2,7 +2,8 @@
 
 ## Goal
 
-Build a coffee-shop POS (point-of-sale) web app called **Coffee OS** from a PRD located at `~/Downloads/prd.md`. The current phase is the **frontend only** — the full backend (Supabase, Drizzle ORM, Better Auth) is deferred until the UI flows are validated.
+Build a coffee-shop POS (point-of-sale) web app called **Coffee OS** from the PRD located at `docs/prd.md`. The current phase is **frontend only** — the full backend (Supabase, Drizzle ORM, Better Auth) is deferred until the UI flows are validated.
+
 
 ## Current Progress
 
