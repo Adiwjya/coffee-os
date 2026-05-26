@@ -2,58 +2,81 @@
 
 ## Goal
 
-Build a coffee-shop POS (point-of-sale) web app called **Coffee OS** from the PRD located at `docs/prd.md`. The current phase is **frontend only** — the full backend (Supabase, Drizzle ORM, Better Auth) is deferred until the UI flows are validated.
-
+Build a coffee-shop POS (point-of-sale) web app called **Coffee OS** from the PRD at `docs/prd.md`. Backend integration (Supabase / Drizzle / Better Auth) is now in place; what's missing is just the **runtime configuration** — the user must supply DB credentials and run migrations/seed before the app boots.
 
 ## Current Progress
 
-The initial frontend is complete and committed to `main` (2 commits total):
-
-- `57ca064` — Initial commit: Coffee OS POS frontend
-- `f557447` — Add CLAUDE.md with project architecture and development guidance
+Backend integration is complete on `main`. Three commits total before this round; this round adds the backend stack on top.
 
 ### What's working
 
-- **Next.js 16 App Router** project with Tailwind CSS v4 and shadcn/ui (amber-minimal theme via tweakcn)
-- **Routes**: `/login`, `/dashboard`, `/pos`, `/inventory`, `/reports`
-- **Auth mock**: role picker (owner | cashier) — no real auth, sets a mock user in Zustand
-- **POS terminal**: product grid + cart, checkout with stock validation
-- **Inventory**: product CRUD (`upsertProduct`, `deleteProduct`, `restock`)
-- **Dashboard**: Recharts charts powered by analytics helpers (`src/lib/analytics.ts`)
-- **Reports**: PDF export (jsPDF + jspdf-autotable, `src/lib/pdf.ts`) with date-range filtering
-- **State**: single Zustand store (`src/lib/store.ts`) persisted to `localStorage` (key `"coffee-os-store"`, version 1)
-- **Seed data**: 14 products, 2 mock users, 30-day stable transaction history via seeded PRNG (`src/lib/mock-data.ts`)
-- **CLAUDE.md**: full architecture documentation checked in
+- **Next.js 16 App Router** + Tailwind CSS v4 + shadcn/ui (amber-minimal theme via tweakcn) — unchanged
+- **Drizzle ORM** schema at `src/db/schema.ts` covering Better Auth (`user`, `session`, `account`, `verification`) and business tables (`products`, `transactions`, `transaction_items`) per PRD §6
+- **Better Auth** with email + password, Drizzle adapter, `nextCookies()` plugin, custom `role` field surfaced on `session.user`
+- **Server actions** for product CRUD/restock and transaction create/list — with role-based authz and transactional stock deduction (`SELECT … FOR UPDATE`)
+- **Auth guard** moved to a server component (`src/app/(app)/layout.tsx`) that calls `requireSession()`
+- **Role gating** in UI (`AppShell` hides owner-only nav) and on the server (`requireOwner()` on `/reports`)
+- **Pages migrated** to a server-renders-initial-data + `"use client"` interactive child pattern (POS, inventory, dashboard, reports)
+- **Zustand store** slimmed to cart-only (`useCartStore`), persisted under `coffee-os-cart`
+- **Initial migration generated** at `drizzle/0000_init_schema.sql` (7 tables, all FKs, indexes)
+- **Seed script** (`scripts/seed.ts`) — creates 2 demo users through Better Auth (so passwords hash correctly), then sets `role` directly, then inserts 14 products
+- **Migration runner** (`scripts/migrate.ts`) — uses Drizzle's postgres-js migrator
+- **npm scripts**: `db:generate`, `db:push`, `db:migrate`, `db:studio`, `db:seed`
+- `npm run lint` clean, `npm run build` produces a valid bundle with all 7 routes
+
+## Git State
+
+All backend integration work is **uncommitted**. The working tree has:
+- **Modified (unstaged):** `CLAUDE.md`, `package.json`, all `src/app/(app)/*/page.tsx`, `src/app/login/page.tsx`, `src/app/page.tsx`, `src/components/app-shell.tsx`, `src/lib/pdf.ts`, `src/lib/store.ts`
+- **Untracked (not staged):** `.env.example`, `drizzle.config.ts`, `drizzle/`, `scripts/`, all `*-client.tsx` files, `src/app/api/`, `src/db/`, `src/lib/auth*.ts`, `src/lib/env.ts`, `src/lib/session.ts`, `src/server/`
+
+Stage and commit before deploying or branching.
+
+## What's Required Before First Boot
+
+The repo is code-complete but cannot start without:
+
+1. A Postgres database (Supabase recommended per PRD)
+2. `.env.local` with:
+   - `DATABASE_URL` (Supabase: Project Settings → Database → Connection string → URI, **Session pooler**)
+   - `BETTER_AUTH_SECRET` (`openssl rand -base64 32`)
+   - `BETTER_AUTH_URL` (defaults to `http://localhost:3000`)
+3. Run `npm run db:migrate` then `npm run db:seed`
+4. `npm run dev` → log in as `owner@coffeeos.id` / `owner123`
 
 ## What Didn't Work / Key Decisions
 
-- **TanStack Start was skipped** — the PRD specified it but the user chose Next.js to match the `D:\Nextjs\coffee-os` folder location.
-- **Backend is intentionally absent** — Supabase/Drizzle/Better Auth are deferred. Non-persistence across browsers is expected, not a bug.
+- **`useHydrated` hook removed** — no longer needed since auth is server-side; the cart is the only persisted store and can tolerate a brief empty-then-populated render on /pos. The ESLint `react-hooks/set-state-in-effect` rule rejected the pattern, and the helper had no other callers.
+- **Receipt numbers use `TRX-<8 hex>` from `crypto.randomUUID()`** instead of a `TRX-00001` sequence. Trade-off: race-free with no extra DB sequence, but no longer monotonically increasing. Easy to swap later by adding a `bigserial` column.
+- **Role is set via Drizzle UPDATE after Better Auth signup** in the seed script. Better Auth's `additionalFields.role.input: false` blocks setting role at sign-up to prevent privilege escalation through the public endpoint. Admin signup tools should bypass via direct DB updates the same way.
+- **Pages migrated to server-fetch-then-client-render pattern** rather than full Server Component rendering, because the existing interactivity (cart, dialogs, tab filters, search) needed client state. Each page is now `page.tsx` (server, fetches initial data) + `*-client.tsx` (client, owns state + calls server actions).
 
 ## Next Steps
 
-The natural next phase is **wiring the real backend**:
-
-1. Set up Supabase project and get credentials.
-2. Add Drizzle ORM schema (products, transactions, users).
-3. Integrate Better Auth for real login (replace the mock role picker).
-4. Replace the Zustand/localStorage layer with server-side data fetching (Server Components or API routes).
-5. Migrate seed data into the Supabase DB.
-
-If the user wants to stay in the frontend-only phase, possible improvements include:
-- Adding more shadcn/ui components or polish passes
-- Expanding analytics (hourly breakdown, product-level trends)
-- Improving the PDF report layout
+1. **User supplies Supabase credentials** and runs migrate + seed. The app boots after that.
+2. **30-day seed transactions** are *not* generated by the seed script — fresh DB starts empty. If demo charts on /dashboard need data, port `generateSeedTransactions` from the old `mock-data.ts` (commit `e05c69e`) into a server-side `createTransaction` loop.
+3. **Owner-only registration UI** — currently new users can only be created via `npm run db:seed` or by editing the DB directly. A `/login` "Daftar" tab would call `signUp.email()`; new accounts default to `cashier` role; owners promote via an admin page.
+4. **Add tests** — no test runner is configured. Pick Vitest if going minimal, Playwright for E2E around login + checkout flows.
+5. **Realtime** — Supabase has Realtime; a future iteration could subscribe `inventory` / `dashboard` to live row updates instead of relying on `router.refresh()`.
 
 ## Key Files
 
 | Path | Purpose |
 |------|---------|
-| `src/lib/store.ts` | Zustand store — all business logic and state |
-| `src/lib/mock-data.ts` | Seed products, users, transaction generator |
-| `src/lib/analytics.ts` | Pure analytics functions (revenue, series, top products) |
-| `src/lib/pdf.ts` | PDF report generation |
-| `src/lib/format.ts` | Currency/date formatters (id-ID locale) |
-| `src/app/(app)/layout.tsx` | Auth guard for protected routes |
-| `src/components/app-shell.tsx` | Sidebar + header with low-stock badge |
-| `CLAUDE.md` | Full architecture reference for Claude |
+| `src/db/schema.ts` | Drizzle schema — all tables |
+| `src/db/index.ts` | Postgres client + Drizzle instance |
+| `src/lib/auth.ts` | Better Auth server config |
+| `src/lib/auth-client.ts` | Better Auth React client |
+| `src/lib/session.ts` | `getSession` / `requireSession` / `requireOwner` |
+| `src/lib/env.ts` | Typed env loader (fails loudly on missing vars) |
+| `src/lib/store.ts` | Zustand — cart only |
+| `src/server/actions/products.ts` | Product list/upsert/delete/restock |
+| `src/server/actions/transactions.ts` | List + transactional create |
+| `src/app/api/auth/[...all]/route.ts` | Better Auth handler |
+| `src/app/(app)/layout.tsx` | Server-side auth guard + AppShell |
+| `src/app/login/page.tsx` + `login-form.tsx` | Email/password sign-in |
+| `src/app/(app)/*/page.tsx` + `*-client.tsx` | Server-fetch + client-render pattern |
+| `scripts/migrate.ts`, `scripts/seed.ts` | DB setup tooling |
+| `drizzle/0000_init_schema.sql` | Initial migration |
+| `.env.example` | Required env vars |
+| `CLAUDE.md` | Full architecture reference |

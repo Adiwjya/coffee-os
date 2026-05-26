@@ -5,63 +5,103 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
-npm run dev      # start dev server (localhost:3000)
-npm run build    # production build
-npm run lint     # ESLint (Next.js config, no --fix by default)
+npm run dev          # start dev server (localhost:3000)
+npm run build        # production build
+npm run lint         # ESLint (Next.js config)
+
+# Database (requires DATABASE_URL in .env.local)
+npm run db:generate  # generate Drizzle SQL migration from schema.ts
+npm run db:push      # push schema directly (dev only)
+npm run db:migrate   # apply generated migrations from ./drizzle
+npm run db:studio    # open Drizzle Studio
+npm run db:seed      # insert demo users + 14 seed products
 ```
 
 No test runner is configured.
 
+## First-time setup
+
+1. Copy `.env.example` → `.env.local`
+2. Fill in `DATABASE_URL` (Supabase Connection String → URI, prefer Session pooler) and `BETTER_AUTH_SECRET` (generate with `openssl rand -base64 32`)
+3. `npm install`
+4. `npm run db:migrate` (or `npm run db:push` for first dev iteration)
+5. `npm run db:seed` — creates `owner@coffeeos.id` / `owner123` and `kasir@coffeeos.id` / `kasir123` plus 14 products
+6. `npm run dev`
+
 ## Architecture
 
-Coffee OS is a coffee-shop POS (point-of-sale) frontend built with Next.js 16 App Router, Tailwind CSS v4, and shadcn/ui. There is **no backend** — all state lives in the browser via Zustand persisted to `localStorage` (key `"coffee-os-store"`, version 1). Supabase/Drizzle/Better Auth integration is deferred.
+Coffee OS is a coffee-shop POS frontend built with **Next.js 16 App Router**, **Tailwind CSS v4**, **shadcn/ui**, **Drizzle ORM (Postgres / Supabase)**, and **Better Auth**. Cart state lives in `localStorage` via Zustand; everything else is server-backed.
 
 ### Routing
 
 ```
-/                   → redirects to /login or /dashboard
-/login              → role picker (owner | cashier), no real auth
-/(app)/dashboard    → sales overview with Recharts charts
-/(app)/pos          → POS terminal (product grid + cart)
-/(app)/inventory    → stock management, product CRUD
-/(app)/reports      → PDF export via jsPDF
+/                   → redirects to /login or role-based home (server)
+/login              → email/password sign-in via Better Auth
+/(app)/dashboard    → sales overview (owner + cashier)
+/(app)/pos          → POS terminal
+/(app)/inventory    → stock + product CRUD (CRUD restricted to owner)
+/(app)/reports      → PDF export (owner-only)
+/api/auth/[...all]  → Better Auth catch-all handler
 ```
 
-The `(app)` route group has a layout (`src/app/(app)/layout.tsx`) that guards every protected route: it reads `currentUser` from the Zustand store and redirects to `/login` if null. Hydration timing is handled by `useHydrated()` in `src/lib/store.ts` to avoid SSR/localStorage mismatches — always call this hook before rendering user-dependent UI.
+Auth guard lives in `src/app/(app)/layout.tsx` — a server component that calls `requireSession()` and redirects unauthenticated users to `/login`. Role gating (owner vs cashier) happens both server-side (e.g. `requireOwner()` in `reports/page.tsx`) and in the UI (`AppShell` hides nav links via `ownerOnly`).
 
-### State (`src/lib/store.ts`)
+### Database (`src/db/`)
 
-Single Zustand store exported as `useStore`. All business logic lives here:
-- **auth**: `login(role)` sets a mock user from `USERS`, `logout()` clears user and cart.
-- **cart**: `addToCart`, `decrementCart`, `removeFromCart`, `clearCart` — cart items are `{ productId, quantity }` only; product details are joined at render time.
-- **checkout**: validates stock, creates a `Transaction`, deducts stock from products, appends to `transactions[]`, clears cart. Returns `{ ok, transaction?, error? }`.
-- **inventory**: `restock`, `upsertProduct` (insert or update by `id`), `deleteProduct`.
-- `resetData()` resets products and transactions to seed values.
+`src/db/schema.ts` defines all tables using `drizzle-orm/pg-core`:
 
-Derived helpers exported from the same file: `getLowStock(products)`, `isToday(iso)`, `CATEGORIES`.
+- **Better Auth core**: `user`, `session`, `account`, `verification` (column names follow the Better Auth Drizzle adapter conventions). A custom `role` field (`"owner" | "cashier"`) is added on `user` and surfaced on `session.user.role` via `additionalFields` in `src/lib/auth.ts`.
+- **Business tables**: `products`, `transactions`, `transaction_items` (per PRD section 6).
 
-### Data layer
+Connection is `postgres-js` driver via `src/db/index.ts`. The client is cached on `globalThis` in dev to survive HMR. Use `db` for all queries; `schema` is also re-exported for filter helpers.
 
-`src/lib/mock-data.ts` — seed products (`SEED_PRODUCTS`, 14 items), two mock users (`USERS`), and `generateSeedTransactions()` which uses a seeded PRNG (mulberry32, seed 42) to produce stable 30-day transaction history.
+`drizzle.config.ts` reads `DATABASE_URL` from `.env.local` (then `.env`) and writes migrations to `./drizzle/`. The config falls back to a placeholder URL if env is missing so `npx drizzle-kit generate` works without a live DB.
 
-Product categories: `"Kopi" | "Non-Kopi" | "Makanan"`.  
-Payment methods: `"Cash" | "QRIS" | "Debit"`.  
-Currency and dates use `id-ID` locale throughout (`src/lib/format.ts`).
+### Auth (`src/lib/auth.ts`, `src/lib/auth-client.ts`, `src/lib/session.ts`)
+
+- `auth` = server-side Better Auth instance with the Drizzle adapter, email+password enabled, 7-day sessions, `nextCookies()` plugin.
+- `authClient` = browser-side client (`createAuthClient` + `inferAdditionalFields<typeof auth>()` so `role` is typed on the client too).
+- `getSession()` / `requireSession()` / `requireOwner()` (in `src/lib/session.ts`) are server-only helpers used inside Server Components and Server Actions to authenticate and authorize requests.
+
+The `/api/auth/[...all]/route.ts` mounts Better Auth's catch-all handler — it's the only API route in the app.
+
+### Server actions (`src/server/actions/`)
+
+`products.ts` — `listProducts`, `upsertProduct` (owner-only), `deleteProduct` (owner-only), `restockProduct`. All call `requireSession()` / `requireOwner()` for authz and `revalidatePath("/", "layout")` after mutations.
+
+`transactions.ts` — `listTransactions`, `createTransaction`. Checkout runs the validate-insert-deduct steps inside `db.transaction()` with `SELECT … FOR UPDATE` locks to prevent oversell. Receipt numbers are `TRX-<8 hex>` from a random UUID prefix — no sequence, no race.
+
+### Pages (Server + Client pattern)
+
+Each protected page is split:
+
+- `page.tsx` — Server Component. Fetches data via server actions (or queries `db` directly for the auth-layout's low-stock list) and passes it as `initial*` props to a client child.
+- `*-client.tsx` — `"use client"` component that owns interactive state (search, filters, cart) and triggers mutations via Server Actions inside `useTransition` + `router.refresh()`.
+
+This keeps the network shape simple: initial data is in the HTML payload, mutations go through Server Actions, and revalidation is cache-driven.
+
+### Client state (`src/lib/store.ts`)
+
+Zustand store reduced to **cart only** (`useCartStore`). Cart items are `{ productId, quantity }` — product details join at render time using the server-fetched product list. The store is still persisted to `localStorage` under `"coffee-os-cart"` (version 1).
+
+Derived helpers remain exported: `getLowStock(products)`, `isToday(iso)`, `CATEGORIES`.
 
 ### Analytics (`src/lib/analytics.ts`)
 
-Pure functions that derive metrics from `Transaction[]`:
+Unchanged. Pure functions over `Transaction[]`:
 - `getRange(key)` / `filterByRange` — date windowing (today / 7d / 30d)
 - `summarize` → `{ revenue, count, itemsSold, avg }`
-- `dailySeries(transactions, days)` → array of `{ date, label, revenue, count }` for Recharts
+- `dailySeries(transactions, days)` → array for Recharts
 - `topProducts` / `paymentBreakdown` — ranked aggregates
+
+These are reused by both the dashboard and the PDF generator.
 
 ### PDF reports (`src/lib/pdf.ts`)
 
-`generateSalesReportPDF(range, transactions)` builds an A4 PDF using jsPDF + jspdf-autotable and triggers a browser download. It calls the same analytics functions above. The `@ts-expect-error` on `doc.lastAutoTable` is intentional — the plugin attaches this property at runtime and has no types.
+`generateSalesReportPDF(range, transactions)` builds an A4 PDF using jsPDF + jspdf-autotable. The `@ts-expect-error` on `doc.lastAutoTable` is intentional.
 
 ### UI components
 
-`src/components/ui/` — shadcn/ui components (Button, Card, Dialog, Sheet, etc.). Do not edit these directly; re-run `npx shadcn add <component>` to update them.
+`src/components/ui/` — shadcn/ui components. Do not edit directly; re-run `npx shadcn add <component>` to update them.
 
-`src/components/app-shell.tsx` — the persistent sidebar + header wrapper rendered by the `(app)` layout. It reads low-stock products from the store and shows a notification badge on the bell icon.
+`src/components/app-shell.tsx` — persistent sidebar + header. Receives `currentUser` and `lowStock` as props from `src/app/(app)/layout.tsx`. Logout calls `authClient.signOut()` and `router.refresh()`. Nav links hide owner-only routes for cashiers.

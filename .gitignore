@@ -32,6 +32,10 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
+
+# drizzle generated migrations are checked in; raw output dir for ad-hoc dumps is not
+/drizzle/meta/_journal.dev.json
 
 # vercel
 .vercel

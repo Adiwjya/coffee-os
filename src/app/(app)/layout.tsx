@@ -1,29 +1,36 @@
-"use client";
+import { requireSession } from "@/lib/session";
+import { db } from "@/db";
+import { products } from "@/db/schema";
+import { asc, sql } from "drizzle-orm";
+import { AppShell, type AppShellUser, type LowStockProduct } from "@/components/app-shell";
 
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { Coffee } from "lucide-react";
-import { useStore, useHydrated } from "@/lib/store";
-import { AppShell } from "@/components/app-shell";
+export default async function AppLayout({ children }: { children: React.ReactNode }) {
+  const session = await requireSession();
 
-export default function AppLayout({ children }: { children: React.ReactNode }) {
-  const router = useRouter();
-  const hydrated = useHydrated();
-  const currentUser = useStore((s) => s.currentUser);
+  const lowStockRows = await db
+    .select({
+      id: products.id,
+      name: products.name,
+      emoji: products.emoji,
+      stock: products.stock,
+      minStockAlert: products.minStockAlert,
+    })
+    .from(products)
+    .where(sql`${products.stock} <= ${products.minStockAlert}`)
+    .orderBy(asc(products.stock));
 
-  useEffect(() => {
-    if (hydrated && !currentUser) {
-      router.replace("/login");
-    }
-  }, [hydrated, currentUser, router]);
+  const lowStock: LowStockProduct[] = lowStockRows;
 
-  if (!hydrated || !currentUser) {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <Coffee className="size-8 animate-pulse text-primary" />
-      </div>
-    );
-  }
+  const currentUser: AppShellUser = {
+    id: session.user.id,
+    name: session.user.name,
+    email: session.user.email,
+    role: session.user.role as "owner" | "cashier",
+  };
 
-  return <AppShell>{children}</AppShell>;
+  return (
+    <AppShell currentUser={currentUser} lowStock={lowStock}>
+      {children}
+    </AppShell>
+  );
 }
