@@ -88,16 +88,20 @@ export function DashboardClient({
           icon={<Wallet className="size-5" />}
           accent
         />
-        <StatCard
-          title="Transaksi Hari Ini"
-          value={formatNumber(todaySummary.count)}
-          icon={<Receipt className="size-5" />}
-        />
-        <StatCard
-          title="Item Terjual"
-          value={formatNumber(todaySummary.itemsSold)}
-          icon={<Coffee className="size-5" />}
-        />
+        <div className="grid grid-cols-2 gap-4 sm:contents">
+          <StatCard
+            title="Transaksi Hari Ini"
+            value={formatNumber(todaySummary.count)}
+            icon={<Receipt className="size-5" />}
+            compact
+          />
+          <StatCard
+            title="Item Terjual"
+            value={formatNumber(todaySummary.itemsSold)}
+            icon={<Coffee className="size-5" />}
+            compact
+          />
+        </div>
         <StatCard
           title="Rata-rata / Transaksi"
           value={formatRupiah(todaySummary.avg)}
@@ -281,25 +285,33 @@ function StatCard({
   value,
   icon,
   accent,
+  compact,
 }: {
   title: string;
   value: string;
   icon: React.ReactNode;
   accent?: boolean;
+  compact?: boolean;
 }) {
   return (
     <Card className={accent ? "border-primary/30 bg-primary/5" : undefined}>
-      <CardContent className="flex items-center justify-between p-5">
-        <div>
-          <p className="text-sm text-muted-foreground">{title}</p>
-          <p className="mt-1 text-2xl font-bold">{value}</p>
-        </div>
+      <CardContent
+        className={
+          compact
+            ? "flex flex-col items-start gap-3 p-5 sm:flex-row sm:items-center sm:justify-between"
+            : "flex items-center justify-between p-5"
+        }
+      >
         <div
           className={`flex size-11 items-center justify-center rounded-lg ${
             accent ? "bg-primary text-primary-foreground" : "bg-muted text-foreground"
-          }`}
+          } ${compact ? "order-first sm:order-last" : "order-last"}`}
         >
           {icon}
+        </div>
+        <div>
+          <p className="text-sm text-muted-foreground">{title}</p>
+          <p className="mt-1 text-2xl font-bold">{value}</p>
         </div>
       </CardContent>
     </Card>

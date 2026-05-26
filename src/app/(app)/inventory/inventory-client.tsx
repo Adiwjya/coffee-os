@@ -155,24 +155,28 @@ export function InventoryClient({
         )}
       </div>
 
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <MiniStat
           icon={<Package className="size-5" />}
           label="Total Produk"
           value={formatNumber(products.length)}
         />
-        <MiniStat
-          icon={<AlertTriangle className="size-5" />}
-          label="Stok Menipis"
-          value={formatNumber(lowCount)}
-          tone="warning"
-        />
-        <MiniStat
-          icon={<XCircle className="size-5" />}
-          label="Stok Habis"
-          value={formatNumber(outCount)}
-          tone="danger"
-        />
+        <div className="grid grid-cols-2 gap-4 sm:contents">
+          <MiniStat
+            icon={<AlertTriangle className="size-5" />}
+            label="Stok Menipis"
+            value={formatNumber(lowCount)}
+            tone="warning"
+            compact
+          />
+          <MiniStat
+            icon={<XCircle className="size-5" />}
+            label="Stok Habis"
+            value={formatNumber(outCount)}
+            tone="danger"
+            compact
+          />
+        </div>
         <MiniStat
           icon={<Wallet className="size-5" />}
           label="Nilai Inventaris"
@@ -346,11 +350,13 @@ function MiniStat({
   label,
   value,
   tone,
+  compact,
 }: {
   icon: React.ReactNode;
   label: string;
   value: string;
   tone?: "warning" | "danger";
+  compact?: boolean;
 }) {
   const toneClass =
     tone === "danger"
@@ -360,13 +366,23 @@ function MiniStat({
         : "bg-muted text-foreground";
   return (
     <Card>
-      <CardContent className="flex flex-col items-start gap-2 p-4 sm:flex-row sm:items-center sm:gap-3">
-        <div className={`flex size-10 items-center justify-center rounded-lg ${toneClass}`}>
+      <CardContent
+        className={
+          compact
+            ? "flex flex-col items-start gap-3 p-5 sm:flex-row sm:items-center sm:justify-between"
+            : "flex items-center justify-between p-5"
+        }
+      >
+        <div
+          className={`flex size-11 items-center justify-center rounded-lg ${toneClass} ${
+            compact ? "order-first sm:order-last" : "order-last"
+          }`}
+        >
           {icon}
         </div>
         <div>
-          <p className="text-xs text-muted-foreground">{label}</p>
-          <p className="text-lg font-bold">{value}</p>
+          <p className="text-sm text-muted-foreground">{label}</p>
+          <p className="mt-1 text-2xl font-bold">{value}</p>
         </div>
       </CardContent>
     </Card>

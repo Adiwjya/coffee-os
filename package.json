@@ -11,7 +11,8 @@
     "db:push": "drizzle-kit push",
     "db:migrate": "tsx scripts/migrate.ts",
     "db:studio": "drizzle-kit studio",
-    "db:seed": "tsx scripts/seed.ts"
+    "db:seed": "tsx scripts/seed.ts",
+    "db:reset-avatars": "tsx scripts/reset-avatars.ts"
   },
   "dependencies": {
     "better-auth": "^1.6.11",

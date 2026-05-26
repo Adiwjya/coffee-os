@@ -14,7 +14,7 @@ import {
   Bell,
   AlertTriangle,
   PanelLeftClose,
-  PanelLeftOpen,
+  UserPlus,
 } from "lucide-react";
 import { signOut } from "@/lib/auth-client";
 import { cn } from "@/lib/utils";
@@ -30,12 +30,13 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 export interface AppShellUser {
   id: string;
   name: string;
   email: string;
-  role: "owner" | "cashier";
+  role: "owner" | "cashier" | "gudang" | "barista";
 }
 
 export interface LowStockProduct {
@@ -50,6 +51,7 @@ const NAV = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, ownerOnly: false },
   { href: "/pos", label: "Kasir (POS)", icon: ShoppingCart, ownerOnly: false },
   { href: "/inventory", label: "Inventaris", icon: Package, ownerOnly: false },
+  { href: "/staff", label: "Kasir Baru", icon: UserPlus, ownerOnly: true },
   { href: "/reports", label: "Laporan", icon: FileText, ownerOnly: true },
 ];
 
@@ -119,25 +121,62 @@ function SidebarContent({
   role,
   collapsed,
   onToggle,
+  onLogout,
 }: {
   onNavigate?: () => void;
   role: AppShellUser["role"];
   collapsed: boolean;
   onToggle?: () => void;
+  onLogout: () => void;
 }) {
+  const canExpand = collapsed && !!onToggle;
+
+  function handleBlankClick(e: React.MouseEvent<HTMLDivElement>) {
+    if (canExpand && e.target === e.currentTarget) onToggle!();
+  }
+
   return (
-    <div className={cn("flex h-full flex-col gap-6 p-3", collapsed && "px-2")}>
+    <div
+      className={cn(
+        "flex h-full flex-col gap-6 p-3",
+        collapsed && "px-2",
+        canExpand && "cursor-pointer"
+      )}
+      onClick={handleBlankClick}
+      role={canExpand ? "button" : undefined}
+      aria-label={canExpand ? "Expand sidebar" : undefined}
+      tabIndex={canExpand ? 0 : undefined}
+      onKeyDown={
+        canExpand
+          ? (e) => {
+              if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) {
+                e.preventDefault();
+                onToggle!();
+              }
+            }
+          : undefined
+      }
+    >
       <div className="flex items-center justify-between gap-1">
-        <Brand collapsed={collapsed} />
-        {onToggle && (
+        {canExpand ? (
+          <button
+            type="button"
+            onClick={onToggle}
+            aria-label="Expand sidebar"
+            title="Expand sidebar"
+            className="rounded-md transition-opacity hover:opacity-80"
+          >
+            <Brand collapsed={collapsed} />
+          </button>
+        ) : (
+          <Brand collapsed={collapsed} />
+        )}
+        {onToggle && !collapsed && (
           <Button
             variant="ghost"
             size="icon"
             onClick={onToggle}
-            className={cn(
-              "size-8 shrink-0 text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-              collapsed && "hidden"
-            )}
+            className="size-8 shrink-0 text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
             aria-label="Minimize sidebar"
             title="Minimize sidebar"
           >
@@ -146,29 +185,34 @@ function SidebarContent({
         )}
       </div>
 
-      {onToggle && collapsed && (
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={onToggle}
-          className="-mt-3 size-8 self-center text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-          aria-label="Expand sidebar"
-          title="Expand sidebar"
-        >
-          <PanelLeftOpen className="size-4" />
-        </Button>
-      )}
-
       <NavLinks onNavigate={onNavigate} role={role} collapsed={collapsed} />
 
-      {!collapsed && (
-        <div className="mt-auto rounded-lg bg-accent p-3 text-xs text-accent-foreground">
-          <p className="font-semibold">Coffee OS</p>
-          <p className="mt-1 text-accent-foreground/80">
-            Transaksi otomatis memotong stok & masuk pembukuan.
-          </p>
-        </div>
-      )}
+      <div className={cn("mt-auto flex flex-col gap-3", collapsed && "items-center")}>
+        {!collapsed && (
+          <div className="rounded-lg bg-accent p-3 text-xs text-accent-foreground">
+            <p className="font-semibold">Coffee OS</p>
+            <p className="mt-1 text-accent-foreground/80">
+              Transaksi otomatis memotong stok & masuk pembukuan.
+            </p>
+          </div>
+        )}
+
+        <Button
+          variant="ghost"
+          onClick={onLogout}
+          title={collapsed ? "Keluar" : undefined}
+          aria-label="Keluar"
+          className={cn(
+            "text-base font-semibold text-sidebar-foreground/80 hover:bg-destructive hover:text-white",
+            collapsed
+              ? "size-12 self-center p-0"
+              : "h-12 w-full justify-start gap-3 px-4"
+          )}
+        >
+          <LogOut className="size-5 shrink-0" />
+          <span className={cn(collapsed && "sr-only")}>Keluar</span>
+        </Button>
+      </div>
     </div>
   );
 }
@@ -221,7 +265,10 @@ export function AppShell({
     .toUpperCase();
 
   return (
-    <div className="flex min-h-screen bg-muted/30">
+    <div
+      className="flex min-h-screen bg-muted/30"
+      style={{ "--sidebar-width": collapsed ? "4rem" : "16rem" } as React.CSSProperties}
+    >
       {/* Desktop / tablet sidebar */}
       <aside
         className={cn(
@@ -234,6 +281,7 @@ export function AppShell({
             role={currentUser.role}
             collapsed={collapsed}
             onToggle={toggleCollapsed}
+            onLogout={handleLogout}
           />
         </div>
       </aside>
@@ -254,6 +302,7 @@ export function AppShell({
                 role={currentUser.role}
                 collapsed={false}
                 onNavigate={() => setMobileOpen(false)}
+                onLogout={handleLogout}
               />
             </SheetContent>
           </Sheet>
@@ -263,6 +312,8 @@ export function AppShell({
           </div>
 
           <div className="ml-auto flex items-center gap-2">
+            <ThemeToggle />
+
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="icon" className="relative">

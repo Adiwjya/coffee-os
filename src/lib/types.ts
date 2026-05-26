@@ -1,4 +1,14 @@
-export type Role = "owner" | "cashier";
+export type Role = "owner" | "cashier" | "gudang" | "barista";
+
+export const STAFF_ROLES = ["cashier", "gudang", "barista"] as const;
+export type StaffRole = (typeof STAFF_ROLES)[number];
+
+export const ROLE_LABELS: Record<Role, string> = {
+  owner: "Owner",
+  cashier: "Kasir",
+  gudang: "Gudang",
+  barista: "Barista",
+};
 
 export type ProductCategory = "Kopi" | "Non-Kopi" | "Makanan";
 

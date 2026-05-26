@@ -15,6 +15,7 @@ npm run db:push      # push schema directly (dev only)
 npm run db:migrate   # apply generated migrations from ./drizzle
 npm run db:studio    # open Drizzle Studio
 npm run db:seed      # insert demo users + 14 seed products
+npm run db:reset-avatars  # one-shot recovery: NULLs user.image + drops legacy `settings` table
 ```
 
 No test runner is configured.
@@ -37,9 +38,10 @@ Coffee OS is a coffee-shop POS frontend built with **Next.js 16 App Router**, **
 ```
 /                   → redirects to /login or role-based home (server)
 /login              → email/password sign-in via Better Auth
-/(app)/dashboard    → sales overview (owner + cashier)
+/(app)/dashboard    → sales overview (all roles)
 /(app)/pos          → POS terminal
 /(app)/inventory    → stock + product CRUD (CRUD restricted to owner)
+/(app)/staff        → list users + "Kasir Baru" dialog (owner-only)
 /(app)/reports      → PDF export (owner-only)
 /api/auth/[...all]  → Better Auth catch-all handler
 ```
@@ -50,7 +52,7 @@ Auth guard lives in `src/app/(app)/layout.tsx` — a server component that calls
 
 `src/db/schema.ts` defines all tables using `drizzle-orm/pg-core`:
 
-- **Better Auth core**: `user`, `session`, `account`, `verification` (column names follow the Better Auth Drizzle adapter conventions). A custom `role` field (`"owner" | "cashier"`) is added on `user` and surfaced on `session.user.role` via `additionalFields` in `src/lib/auth.ts`.
+- **Better Auth core**: `user`, `session`, `account`, `verification` (column names follow the Better Auth Drizzle adapter conventions). A custom `role` field (`"owner" | "cashier" | "gudang" | "barista"`) is added on `user` and surfaced on `session.user.role` via `additionalFields` in `src/lib/auth.ts`. `STAFF_ROLES` / `ROLE_LABELS` (Indonesian labels) live in `src/lib/types.ts`.
 - **Business tables**: `products`, `transactions`, `transaction_items` (per PRD section 6).
 
 Connection is `postgres-js` driver via `src/db/index.ts`. The client is cached on `globalThis` in dev to survive HMR. Use `db` for all queries; `schema` is also re-exported for filter helpers.
@@ -70,6 +72,8 @@ The `/api/auth/[...all]/route.ts` mounts Better Auth's catch-all handler — it'
 `products.ts` — `listProducts`, `upsertProduct` (owner-only), `deleteProduct` (owner-only), `restockProduct`. All call `requireSession()` / `requireOwner()` for authz and `revalidatePath("/", "layout")` after mutations.
 
 `transactions.ts` — `listTransactions`, `createTransaction`. Checkout runs the validate-insert-deduct steps inside `db.transaction()` with `SELECT … FOR UPDATE` locks to prevent oversell. Receipt numbers are `TRX-<8 hex>` from a random UUID prefix — no sequence, no race.
+
+`users.ts` — `listCashiers`, `createCashier` (both owner-only). `createCashier` accepts `role: StaffRole` and creates the account via `auth.api.signUpEmail()` (so the password is hashed correctly), then sets `role` with a follow-up UPDATE — same pattern as the seed script, because Better Auth's `additionalFields.role.input: false` blocks setting role at sign-up.
 
 ### Pages (Server + Client pattern)
 
@@ -104,4 +108,6 @@ These are reused by both the dashboard and the PDF generator.
 
 `src/components/ui/` — shadcn/ui components. Do not edit directly; re-run `npx shadcn add <component>` to update them.
 
-`src/components/app-shell.tsx` — persistent sidebar + header. Receives `currentUser` and `lowStock` as props from `src/app/(app)/layout.tsx`. Logout calls `authClient.signOut()` and `router.refresh()`. Nav links hide owner-only routes for cashiers.
+`src/components/app-shell.tsx` — persistent sidebar + header. Receives `currentUser` and `lowStock` as props from `src/app/(app)/layout.tsx`. Logout calls `authClient.signOut()` and `router.refresh()`. Nav links hide owner-only routes (`/staff`, `/reports`) for non-owners. The sidebar's collapsed-state width is exposed on the AppShell root as the `--sidebar-width` CSS variable (`4rem` collapsed, `16rem` expanded) — fixed-position UI inside `<main>` (e.g. the POS mobile bottom bar) reads it via `md:left-[var(--sidebar-width,16rem)]` to avoid overlapping the sidebar. When collapsed, clicking the brand icon or any blank area in the sidebar expands it (no dedicated expand button).
+
+`src/components/theme-provider.tsx` + `src/components/theme-toggle.tsx` — `next-themes`-based light/dark toggle wired in `src/app/layout.tsx` (`<html suppressHydrationWarning>`, attribute=class, defaultTheme=system). The toggle reads `resolvedTheme` only inside `onClick` to avoid hydration mismatch; icons swap via `dark:` CSS variants. `.dark` CSS variables are defined in `src/app/globals.css`. `src/components/ui/sonner.tsx` already reads `useTheme()` so toasts follow the theme.

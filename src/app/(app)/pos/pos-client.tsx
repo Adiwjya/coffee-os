@@ -12,9 +12,13 @@ import {
   Printer,
   X,
   Loader2,
+  Banknote,
+  QrCode,
+  CreditCard,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useCartStore, CATEGORIES } from "@/lib/store";
+import { cn } from "@/lib/utils";
 import { formatRupiah, formatDateTime } from "@/lib/format";
 import type { PaymentMethod, Transaction } from "@/lib/types";
 import type { ProductDTO } from "@/server/actions/products";
@@ -24,13 +28,6 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -46,6 +43,12 @@ import {
 } from "@/components/ui/sheet";
 
 const PAYMENTS: PaymentMethod[] = ["Cash", "QRIS", "Debit"];
+
+const PAYMENT_ICONS: Record<PaymentMethod, React.ComponentType<{ className?: string }>> = {
+  Cash: Banknote,
+  QRIS: QrCode,
+  Debit: CreditCard,
+};
 
 type CartLine = ProductDTO & { quantity: number };
 
@@ -149,7 +152,7 @@ export function POSClient({ initialProducts }: { initialProducts: ProductDTO[] }
 
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <Tabs value={category} onValueChange={setCategory}>
-            <TabsList className="w-full justify-start overflow-x-auto sm:w-auto">
+            <TabsList className="w-full justify-start overflow-x-auto [scrollbar-width:none] sm:w-auto [&::-webkit-scrollbar]:hidden">
               <TabsTrigger value="Semua">Semua</TabsTrigger>
               {CATEGORIES.map((c) => (
                 <TabsTrigger key={c} value={c}>
@@ -236,7 +239,7 @@ export function POSClient({ initialProducts }: { initialProducts: ProductDTO[] }
       </Sheet>
 
       {/* Mobile sticky bottom bar */}
-      <div className="fixed inset-x-0 bottom-0 z-20 border-t bg-background/95 p-3 backdrop-blur lg:hidden">
+      <div className="fixed bottom-0 left-0 right-0 z-20 border-t bg-background/95 p-3 backdrop-blur md:left-[var(--sidebar-width,16rem)] lg:hidden">
         <Button
           size="lg"
           className="h-14 w-full justify-between text-base"
@@ -370,18 +373,29 @@ function CartPanel({
           <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
             Metode pembayaran
           </label>
-          <Select value={payment} onValueChange={(v) => setPayment(v as PaymentMethod)}>
-            <SelectTrigger className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {PAYMENTS.map((p) => (
-                <SelectItem key={p} value={p}>
+          <div className="grid grid-cols-3 gap-1.5">
+            {PAYMENTS.map((p) => {
+              const active = payment === p;
+              const Icon = PAYMENT_ICONS[p];
+              return (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => setPayment(p)}
+                  aria-pressed={active}
+                  className={cn(
+                    "flex flex-col items-center justify-center gap-1 rounded-md border py-2 text-xs font-medium transition-colors",
+                    active
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-border bg-background text-foreground hover:bg-muted"
+                  )}
+                >
+                  <Icon className="size-4" />
                   {p}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+                </button>
+              );
+            })}
+          </div>
         </div>
         <Separator />
         <div className="flex items-center justify-between">
