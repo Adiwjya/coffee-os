@@ -2,7 +2,7 @@
 
 ## Goal
 
-Build a coffee-shop POS web app called **Coffee OS** per `docs/prd.md`. Backend (Supabase / Drizzle / Better Auth) is wired up; UX polish (theming, responsive layouts, role expansion, sidebar UX) and a "Kasir Baru" staff-registration flow have been shipped and committed. Current pass: **deployment preparation** — production build verified clean, repo being pushed and made public on GitHub.
+Build a coffee-shop POS web app called **Coffee OS** per `docs/prd.md`. Backend (Supabase / Drizzle / Better Auth) is wired up; UX polish (theming, responsive layouts, role expansion, sidebar UX) and a "Kasir Baru" staff-registration flow have been shipped and committed. **Live on Vercel at https://coffee-os-seven.vercel.app** — auto-deploys on every push to `main`.
 
 ## Current Progress
 
@@ -24,18 +24,31 @@ Build a coffee-shop POS web app called **Coffee OS** per `docs/prd.md`. Backend 
 ### This pass — deployment (2026-05-27)
 
 - **`npm run build` — passes clean.** Next.js 16.2.6 / Turbopack. Compiled in 4.0s, TypeScript in 3.6s, no errors or warnings. All routes generated successfully (5 static, rest dynamic server-rendered): `/`, `/login`, `/dashboard`, `/inventory`, `/pos`, `/reports`, `/staff`, `/api/auth/[...all]`, `/_not-found`.
-- **HANDOFF.md refreshed** (this file) to mark deployment milestone.
-- **Push to GitHub + flip repo visibility to public** — in progress as of this commit. Remote: `https://github.com/Adiwjya/coffee-os.git`.
+- **GitHub repo flipped to public** at https://github.com/Adiwjya/coffee-os.
+- **Vercel deploy — LIVE** at https://coffee-os-seven.vercel.app. Imported via Vercel dashboard GitHub integration (no CLI used). Auto-deploys on every push to `main`; feature branches get Preview deployments. Verified end-to-end: login as `owner@coffeeos.id` / `owner123` lands on `/dashboard` with seeded data.
+- **Production env vars set on Vercel** (all marked Sensitive — unreadable after creation, only overwritable):
+  - `DATABASE_URL` → Supabase Session pooler URI (port 5432). Postgres-js + Better Auth need session pooler, not transaction pooler — transaction pooler breaks prepared statements.
+  - `BETTER_AUTH_SECRET` → reused from `.env.local` (rotating logs everyone out).
+  - `BETTER_AUTH_URL` → `https://coffee-os-seven.vercel.app` (Vercel assigned `-seven` because `coffee-os.vercel.app` was taken; initial placeholder mismatch was caught and corrected before first successful login).
 
-## What's Required Before First Boot
+## Deployment
+
+- **Production URL**: https://coffee-os-seven.vercel.app
+- **GitHub**: https://github.com/Adiwjya/coffee-os (public)
+- **Hosting**: Vercel (Hobby tier, `Adiw's projects`), project name `coffee-os`. Production branch = `main`. Auto-deploy on push.
+- **DB**: Supabase Postgres (same instance as local dev — connection string in Vercel env). Schema migrated via `npm run db:migrate` from the dev machine; seed data in place.
+
+## Local dev setup
 
 1. Postgres database (Supabase recommended).
-2. `.env.local` with `DATABASE_URL`, `BETTER_AUTH_SECRET`, optionally `BETTER_AUTH_URL`.
+2. `.env.local` with `DATABASE_URL`, `BETTER_AUTH_SECRET`, optionally `BETTER_AUTH_URL` (defaults to `http://localhost:3000`).
 3. `npm run db:migrate` then `npm run db:seed`.
 4. `npm run dev` → log in as `owner@coffeeos.id` / `owner123`.
 
 ## What Worked
 
+- **Vercel dashboard + GitHub import flow** — zero local CLI setup, no `vercel login` browser dance, secrets stay in the dashboard. Cleanest path for a first deploy. Total time from clicking Import to first working login: ~5 minutes (plus the one re-deploy to fix the BETTER_AUTH_URL placeholder).
+- **Sensitive flag on Vercel env vars** — Vercel auto-marks values that look secret-like as Sensitive, which permanently hides the value (no eye icon). To "see" what's there you have to overwrite. Means: when in doubt about a Sensitive var, just re-set it from the known-good `.env.local`. Don't waste time hunting for a reveal button.
 - **Production build is clean on Next.js 16 + Turbopack** — no migration drift from earlier App Router work; TypeScript and route collection both green.
 - **CSS variable for sidebar width** — cleaner than threading the `collapsed` boolean through every component that needs to clear the sidebar.
 - **`grid-cols-2 ... sm:contents` wrapper trick** — lets a 2-column mobile subgrid "dissolve" into the parent grid at larger breakpoints without duplicating cards.
@@ -54,13 +67,13 @@ Build a coffee-shop POS web app called **Coffee OS** per `docs/prd.md`. Backend 
 
 ## Next Steps
 
-1. **Confirm GitHub repo is public** on `github.com/Adiwjya/coffee-os` after the push completes.
-2. **Pick a host & deploy.** Vercel is the natural fit (Next.js 16 + Turbopack work out of the box). Required env vars on the host: `DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL` (set to the deployed origin). Supabase connection string should use the **Session pooler** URI for serverless.
-3. **Run `npm run db:reset-avatars`** against the production DB if any test users uploaded a profile picture before the avatar revert, then clear cookies for the deployed origin — otherwise the bloated session cookie persists and 431s recur. (No-op if nobody uploaded anything.)
-4. **If you want avatars later**: implement via Supabase Storage. Store only the public URL on `user.image` / `settings.brand_logo`. Keep `cookieCache` enabled — URLs are small. Open questions for that pass: auth method (service role vs anon+RLS) and bucket layout (one bucket with prefixes vs two buckets).
-5. **Owner-only registration is now `/staff`**, but only creates non-owner accounts (Kasir / Gudang / Barista). New owners still require direct DB updates. Consider an admin "promote to owner" affordance later.
-6. **Fix the pre-existing lint error** in AppShell (see "Known Lint Noise") — read localStorage during initial state with a `typeof window` guard.
-7. **Tests** — still no test runner configured.
+1. **Demo credentials are publicly visible** on the login screen ([src/app/login/login-client.tsx](src/app/login/login-client.tsx)). Fine for a portfolio/demo, but before any real-user pilot: remove the hint card and rotate the seeded passwords (or delete the seed accounts).
+2. **Custom domain (optional)** — Vercel → Project → Settings → Domains → Add Domain. After adding, update `BETTER_AUTH_URL` to the new domain and redeploy, or auth cookies will scope to the wrong origin.
+3. **If you want avatars later**: implement via Supabase Storage. Store only the public URL on `user.image` / `settings.brand_logo`. Keep `cookieCache` enabled — URLs are small. Open questions for that pass: auth method (service role vs anon+RLS) and bucket layout (one bucket with prefixes vs two buckets).
+4. **Owner-only registration is now `/staff`**, but only creates non-owner accounts (Kasir / Gudang / Barista). New owners still require direct DB updates. Consider an admin "promote to owner" affordance later.
+5. **Fix the pre-existing lint error** in AppShell (see "Known Lint Noise") — read localStorage during initial state with a `typeof window` guard.
+6. **Tests** — still no test runner configured.
+7. **`db:reset-avatars` recovery script** — keep around in case anyone resurfaces with a 431. No-op if nobody uploaded anything.
 
 ## Key Files
 
